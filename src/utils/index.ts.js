@@ -142,7 +142,7 @@ function shallowCope1(target) {
   if (Array.isArray(target)) {
     return [...target]
   } else if (isObject(target)) {
-    return {...target}
+    return { ...target }
   }
   return target
 }
@@ -277,7 +277,7 @@ const parseParam = (url) => {
   const pattern = /(?<=\?)[^#]+/
   const params = {}
   const paramsStr = pattern.exec(url)?.[0]
-  if (!paramsStr)  return params
+  if (!paramsStr) return params
 
   for (let param of paramsStr.split('&')) {
     // 包含=
@@ -293,6 +293,515 @@ const parseParam = (url) => {
     } else {
       // 处理没有=的参数
       params[param] = true
+    }
+  }
+}
+
+const partial = (fun, ...params) => {
+  return function (...args) {
+    return fun.call(this, ...params, ...args)
+  }
+}
+
+function render(template, data) {
+  const pattern = /\{(\w)}/g
+  return template.replaceAll(pattern, (_, key) => {
+    return data[key]
+  })
+}
+
+/**
+ * @type{HTMLIFrameElement[]}
+ */
+const imgList = []
+// const length = imgList.length
+
+// const imgLazyload = function () {
+//   let count = 0
+//   return function() {
+//     let deletedIndexList = []
+//     const windowHeight = window.innerHeight
+
+//     imgList.forEach((img, index) => {
+//       let rect = img.getBoundingClientRect() 
+//       if (rect.top < windowHeight) {
+//         img.src = img.dataset.src
+//         deletedIndexList.push(index)
+//         count++
+//         if (count === length) {
+//           document.removeEventListener('scroll', imgLazyload)
+//         }
+//       }
+//     })
+//     imgList = imgList.filter((_, index) => !deletedIndexList.includes(index))
+//   }
+// }
+
+
+/**
+ * 
+ * @param {HTMLImageElement[]} imgList 
+ */
+const imgLazyload = (imgList) => {
+  /**
+   * 
+   * @param {IntersectionObserverEntry[]} entries 
+   */
+  const observeCallback = (entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        img = entry.target
+        img.src = img.dataset.src
+        observer.unobserve(img)
+      }
+    })
+  }
+
+  const observer = new IntersectionObserver(observeCallback, {
+    rootMargin: '50px'
+  })
+  imgList.forEach(img => observer.observe(img))
+
+}
+
+/**
+ *  防抖函数 
+ * @param {Function} func - 要防抖的函数
+ * @param {number} wait - 等待的时间, 单位为`毫秒`
+ * @param {boolean} immediate - 是否立即执行
+ * @returns 带有取消功能的已防抖函数
+ */
+function debounce(func, wait, immediate) {
+  let timeout
+  let result
+
+  const debounced = function () {
+    const context = this
+    const args = arguments
+
+    if (timeout) clearTimeout(timeout)
+
+    if (immediate) {    // 立即执行
+      // 有timeout则说明已经执行过了
+      const callNow = !timeout
+      timeout = setTimeout(() => {
+        timeout = null
+      }, wait)
+
+      if (callNow) result = func.apply(context, [...args])
+    } else {     // 不立即执行
+      timeout = setTimeout(() => {
+        func.apply(context, [...args])
+        timeout = null
+      })
+    }
+
+    return result
+  }
+
+  debounced.cancel = () => {
+    clearTimeout(timeout)
+    timeout = null
+  }
+
+  return debounced
+}
+
+const throttle = (func, wait, options) => {
+  let timeout, context, args
+  // 之前执行的时间
+  let previous = 0
+  options = options ?? {}
+  const later = () => {
+    previous = options.leading === false ? 0 : Date.now()
+    timeout = null
+    func.apply(context, args)
+    context = args = null
+  }
+
+  const throttled = function () {
+    const now = Date.now()
+    // previous == 0, 且不立即执行
+    if (!previous && !options.leading) previous = now
+
+    // 还需要等待多久
+    let remaining = wait - (now - previous)
+    context = this
+    args = [...arguments]
+    if (remaining <= 0 || remaining > wait) {
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = null
+      }
+
+      previous = now
+      func.apply(context, args)
+      if (!timeout) context = args = null
+    } else {
+      timeout = setTimeout(later, remaining)
+    }
+  }
+
+  throttled.cancel = () => {
+    clearTimeout(timeout)
+    previous = 0
+    timeout = null
+  }
+
+}
+
+/**
+ * 
+ * @param {Function} func 
+ * @param {number} wait 
+ * @param {object} options 
+ * @param {boolean} options.trailing - 结束后是否再调用一次
+ * @param {boolean} options.leading - 是否立即执行一次
+ */
+function throttle2(func, wait, options) {
+  let context, args, timeout
+  options = options ?? {}
+
+  let previous = 0
+
+  const later = () => {
+    timeout = null
+    func.apply(context, args)
+    const now = Date.now()
+    previous = now
+    context = args = null
+  }
+
+  return function () {
+    const now = Date.now()
+    context = this
+    args = [...arguments]
+    if (previous === 0 && options.leading !== false) {
+      previous = now
+    }
+
+    const remaining = wait - (now - previous)
+    if (remaining <= 0) {
+      if (timeout) {
+        // 是结束后执行或结束后再执行一次
+        clearTimeout(timeout)
+        timeout = null
+      }
+
+      func.apply(context, args)
+      previous = now
+      context = args = null
+    } else if (!timeout && options.leading === false) {
+      timeout = setTimeout(later, remaining)
+    }
+  }
+
+
+}
+
+
+const partial2 = (func, ...args) => {
+  const holderIndex = args.findIndex('_')
+  return function (...args2) {
+    args[holderIndex] = args2.shift()
+    return func.call(this, ...args, ...args2)
+  }
+}
+
+
+const generUrl = (url, params) => {
+  const p = new URLSearchParams(params)
+  for (const [key, value] of Object.entries(params)) {
+    p.append(key, value)
+  }
+
+  return url + '?' + p.toString()
+}
+
+
+const jsonp = ({ url, params, callbackName }) => {
+  return new Promise((resolve) => {
+    const el = document.body.createElement('script')
+    el.src = generUrl(url, {
+      ...params,
+      callback: callbackName
+    })
+    document.body.appendChild(el)
+    window[callbackName]  = (data) => {
+      resolve(data)
+      document.body.removeChild(el)
+    }
+  })
+}
+
+
+function forEach(callback, thisArg) {
+  if (this === null) {
+    throw new TypeError('this is null or not defined')
+  }
+  if (typeof callback !== 'function') {
+    throw new TypeError('callback is not a function')
+  }
+  const a = Object(this)
+  
+}
+
+
+
+function throttle3(func, wait, leading = true) {
+  let context, args, timeout
+  let previous = 0
+
+  const later = () => {
+    previous = Date.now()
+    if (!leading) {
+      func.apply(context, args)
+    }
+    timeout = null
+    context = args = null
+  }
+
+  return function (...args2) {
+    context = this
+    args = args2
+    const now = Date.now()
+
+    // 非立即执行
+    if (previous === 0 && !leading) {
+      previous = now
+    }
+
+    let remaining = wait - (now - previous)
+    if (remaining <= 0) {
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = null
+      }
+        func.apply(context, args)
+        previous = now
+        context = args = null
+    } else if (!timeout && !leading){
+      timeout = setTimeout(later, remaining)
+    }
+  }
+}
+
+const jsp = (url, params, callback) => {
+  return new Promise(resolve => {
+    const query = new URLSearchParams({
+      ...params,
+      callback
+    })
+    const script = document.createElement('script')
+
+    window[callback] = (data) => {
+      document.body.removeChild(script)
+      resolve(data)
+    }
+
+    script.src = url + '?' + query.toString()
+    document.body.appendChild(script)
+  })
+}
+
+const curry = (func, ...args) => {
+  const total = [...args]
+  const curried = (...args2) => {
+    total.push(...args2)
+    if (total.length < func.length) {
+      return curreyed
+    } else {
+      return func.apply(this, total)
+    }
+  }
+
+  return curried
+}
+
+const partial3 = (func, ...args) => {
+  const index = args.indexOf('_')
+
+  return function(...args2) {
+    args[index] = args2.shift()   
+    return func.apply(this, [...args, ...args2])
+  }
+}
+
+function forEach(callback, thisArg) {
+  if (this === null || this === undefined) {
+    throw new TypeError('this is null ro undefined')
+  }
+
+  const o = Object(this)
+
+  // 将length转换为正整数
+  const len = o.length >>> 0
+  for (let i = 0; i < len; i++) {
+    if (i in o) {
+      callback.call(thisArg, o[i], i, o)
+    }
+  }
+}
+
+function reduce (callback, init) {
+  if (this === null || this === undefined) {
+    throw new TypeError('this is null ro undefined')
+  }
+
+  const o = Object(this)
+  // 将length转换为正整数
+  const len = o.length >>> 0
+  const res = []
+  for (let i = 0; i < len; i++) {
+    if (i in o) {
+      res[i] = callback.call(thisArg, o[i], i, o)
+    }
+  }
+
+  return res
+}
+
+function reduce () {
+  if (this === null || this === undefined) {
+    throw new TypeError('this is null ro undefined')
+  }
+
+  const o = Object(this)
+
+  // 将length转换为正整数
+  const len = o.length >>> 0
+
+  if (len === 0) {
+    if (init !== undefined) {
+      return init
+    } else {
+      throw new Error('没有传入初始值')
+    }
+  }
+
+
+  if (len === 1 && init === undefined) return o[0]
+
+  let acc = init ?? o[o]
+
+  let i = init === undefined ? 1 : 0
+  
+  for (; i < init; i++) {
+    acc = callback(acc, o[i], i, o)
+  }
+
+  return acc
+}
+
+
+const call = (fun, self, ...args) => {
+  const ctx = self ?? window 
+  ctx.$F = fun
+  const res = ctx.$F(...args)
+  delete ctx.$F
+  return res
+}
+
+function sayA (name, age) {
+  console.log(this.a, name, age)
+}
+
+
+sayA.c  = function () {
+  const __func = this
+  if (typeof __func !== 'function') {
+    throw new TypeError(this, '不是函数')
+  }
+
+  const args = []
+  for (let i = 0; i < arguments.length; i++) {
+    args.push(arguments[i])
+  }
+
+  let context = args.shift() ?? window
+  if (typeof context !== 'object') context = Object(context)
+
+
+  let paramsStr = '' 
+  for (let i = 0; i < args.length; i++) {
+    console.log(paramsStr)
+    paramsStr += 'args[' + i + '], '
+  }
+  console.log(paramsStr, args)
+  paramsStr = paramsStr.slice(0, -2)
+  
+
+  context.__func = __func
+  const result = Function('context', 'args', 'return context.__func(' + paramsStr + ')')(context , args)
+  delete context.__func
+  return result
+}
+sayA.c({a: 1}, 'li', 1)
+
+
+sayA.b = function (thisArg, args) {
+  const __func = this
+  if (typeof __func !== 'function') {
+    throw new TypeError('this is not a funciton')
+  }
+
+  let context = thisArg ?? window
+  if (typeof thisArg !== 'object') {
+    context = Object(thisArg)
+  }
+
+  args = args ?? []
+
+  let argStr = ''
+  for (let i = 0; i < args.length; i++) {
+    argStr += 'args[' + i + '],'
+  }
+  argStr = argStr.slice(0,-1)
+  context.__func = __func
+  const res = Function('context', 'args', 'return context.__func(' + argStr + ')')(context, args)
+  delete context.__func
+  return res
+}
+
+
+class Mp {
+  static PENDING = 'pending'
+  static FULFILLED = 'fulfilled'
+  static REJECTED = 'rejected'
+
+  result = undefined
+  state = Mp.PENDING
+
+  resolveTaskList = []
+  rejectTaskList = []
+
+  constructor(callback) {
+    try {
+      callback(tihs.resolve.bind(this), this.reject.bind(this))
+    } catch (err) {
+      this.reject(err)
+    }
+  }
+
+  resolve(result) {
+    if (this.state === Mp.PENDING) {
+      this.state = Mp.FULFILLED
+      this.result = result
+
+      for (task of this.resolveTaskList) {
+        task(this.result)
+      }
+    }
+  }
+
+  reject(reason) {
+    if (this.state === Mp.PENDING) {
+      this.state = Mp.REJECTED
+      this.result = result
+
+      for (task of this.rejectTaskList) {
+        task(this.result)
+      }
     }
   }
 }
